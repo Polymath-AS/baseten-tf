@@ -6,15 +6,17 @@ import (
 	"io"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/polymath-as/baseten-tf/internal/baseten"
 )
 
 type fakeCustomModelClient struct {
-	preparedName       string
-	createdName        string
-	createdS3Key       string
-	autoscalingModelID string
-	autoscalingMin     *int64
+	preparedName            string
+	createdName             string
+	createdS3Key            string
+	autoscalingModelID      string
+	autoscalingDeploymentID string
+	autoscalingMin          *int64
 }
 
 func (client *fakeCustomModelClient) PrepareModelUpload(_ context.Context, request baseten.PrepareModelUploadRequest) (baseten.PrepareModelUploadResponse, error) {
@@ -43,8 +45,9 @@ func (client *fakeCustomModelClient) CreateModelFromArchive(_ context.Context, r
 	}, nil
 }
 
-func (client *fakeCustomModelClient) UpdateDeploymentAutoscalingSettings(_ context.Context, modelID string, _ string, settings baseten.AutoscalingSettings) (baseten.UpdateAutoscalingSettingsResponse, error) {
+func (client *fakeCustomModelClient) UpdateDeploymentAutoscalingSettings(_ context.Context, modelID string, deploymentID string, settings baseten.AutoscalingSettings) (baseten.UpdateAutoscalingSettingsResponse, error) {
 	client.autoscalingModelID = modelID
+	client.autoscalingDeploymentID = deploymentID
 	client.autoscalingMin = settings.MinReplica
 	return baseten.UpdateAutoscalingSettingsResponse{Status: "ACCEPTED", Message: "queued"}, nil
 }
@@ -137,6 +140,37 @@ func TestCreateCustomModelRejectsInvalidConfigJSON(t *testing.T) {
 	}, writeArchive, uploadArchive)
 	if err == nil {
 		t.Fatal("createCustomModel accepted invalid config JSON")
+	}
+}
+
+func TestUpdateCustomModelAutoscalingUsesStateIDs(t *testing.T) {
+	client := &fakeCustomModelClient{}
+	state := customModelResourceModel{
+		ModelID:      types.StringValue("model-from-state"),
+		DeploymentID: types.StringValue("deployment-from-state"),
+	}
+	plan := customModelResourceModel{
+		ModelID:      types.StringUnknown(),
+		DeploymentID: types.StringUnknown(),
+		MinReplica:   types.Int64Value(0),
+		MaxReplica:   types.Int64Value(2),
+	}
+
+	output, err := updateCustomModelAutoscaling(context.Background(), client, state, plan)
+	if err != nil {
+		t.Fatalf("updateCustomModelAutoscaling: %v", err)
+	}
+
+	if client.autoscalingModelID != "model-from-state" {
+		t.Fatalf("autoscalingModelID = %q, want model-from-state", client.autoscalingModelID)
+	}
+
+	if client.autoscalingDeploymentID != "deployment-from-state" {
+		t.Fatalf("autoscalingDeploymentID = %q, want deployment-from-state", client.autoscalingDeploymentID)
+	}
+
+	if output.DeploymentStatus != "ACTIVE" {
+		t.Fatalf("DeploymentStatus = %q, want ACTIVE", output.DeploymentStatus)
 	}
 }
 

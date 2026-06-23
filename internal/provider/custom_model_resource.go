@@ -215,7 +215,7 @@ func (customResource *customModelResource) Read(ctx context.Context, request res
 
 	deployment, err := customResource.client.GetDeployment(ctx, state.ModelID.ValueString(), state.DeploymentID.ValueString())
 	if err != nil {
-		var statusError *baseten.StatusError
+		var statusError baseten.StatusError
 		if errors.As(err, &statusError) && statusError.StatusCode == 404 {
 			response.State.RemoveResource(ctx)
 			return
@@ -237,6 +237,27 @@ func (customResource *customModelResource) Update(ctx context.Context, request r
 		return
 	}
 
+	var state customModelResourceModel
+	response.Diagnostics.Append(request.State.Get(ctx, &state)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	output, err := updateCustomModelAutoscaling(ctx, customResource.client, state, plan)
+	if err != nil {
+		response.Diagnostics.AddError("Unable to update Baseten custom model autoscaling", err.Error())
+		return
+	}
+
+	plan.ID = state.ID
+	plan.ModelID = state.ModelID
+	plan.DeploymentID = state.DeploymentID
+	plan.DeploymentStatus = types.StringValue(output.DeploymentStatus)
+	plan.ActiveReplicaCount = types.Int64Value(output.ActiveReplicaCount)
+	response.Diagnostics.Append(response.State.Set(ctx, &plan)...)
+}
+
+func updateCustomModelAutoscaling(ctx context.Context, client customModelClient, state customModelResourceModel, plan customModelResourceModel) (customModelOutput, error) {
 	settings := baseten.AutoscalingSettings{
 		MinReplica:        int64ValuePointer(plan.MinReplica.ValueInt64()),
 		MaxReplica:        int64ValuePointer(plan.MaxReplica.ValueInt64()),
@@ -244,21 +265,24 @@ func (customResource *customModelResource) Update(ctx context.Context, request r
 		ConcurrencyTarget: optionalInt64Pointer(plan.ConcurrencyTarget),
 	}
 
-	_, err := customResource.client.UpdateDeploymentAutoscalingSettings(ctx, plan.ModelID.ValueString(), plan.DeploymentID.ValueString(), settings)
+	modelID := state.ModelID.ValueString()
+	deploymentID := state.DeploymentID.ValueString()
+	_, err := client.UpdateDeploymentAutoscalingSettings(ctx, modelID, deploymentID, settings)
 	if err != nil {
-		response.Diagnostics.AddError("Unable to update Baseten custom model autoscaling", err.Error())
-		return
+		return customModelOutput{}, err
 	}
 
-	deployment, err := customResource.client.GetDeployment(ctx, plan.ModelID.ValueString(), plan.DeploymentID.ValueString())
+	deployment, err := client.GetDeployment(ctx, modelID, deploymentID)
 	if err != nil {
-		response.Diagnostics.AddError("Unable to read Baseten custom model after update", err.Error())
-		return
+		return customModelOutput{}, err
 	}
 
-	plan.DeploymentStatus = types.StringValue(deployment.Status)
-	plan.ActiveReplicaCount = types.Int64Value(deployment.ActiveReplicaCount)
-	response.Diagnostics.Append(response.State.Set(ctx, &plan)...)
+	return customModelOutput{
+		ModelID:            modelID,
+		DeploymentID:       deploymentID,
+		DeploymentStatus:   deployment.Status,
+		ActiveReplicaCount: deployment.ActiveReplicaCount,
+	}, nil
 }
 
 func (customResource *customModelResource) Delete(ctx context.Context, request resource.DeleteRequest, response *resource.DeleteResponse) {
