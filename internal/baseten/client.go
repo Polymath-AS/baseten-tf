@@ -1,6 +1,7 @@
 package baseten
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,22 @@ type InstanceType struct {
 
 type instanceTypesResponse struct {
 	InstanceTypes []InstanceType `json:"instance_types"`
+}
+
+type AutoscalingSettings struct {
+	MinReplica                  *int64 `json:"min_replica,omitempty"`
+	MaxReplica                  *int64 `json:"max_replica,omitempty"`
+	AutoscalingWindow           *int64 `json:"autoscaling_window,omitempty"`
+	ScaleDownDelay              *int64 `json:"scale_down_delay,omitempty"`
+	ConcurrencyTarget           *int64 `json:"concurrency_target,omitempty"`
+	TargetUtilizationPercentage *int64 `json:"target_utilization_percentage,omitempty"`
+	TargetInFlightTokens        *int64 `json:"target_in_flight_tokens,omitempty"`
+	MaxScaleDownRate            *int64 `json:"max_scale_down_rate,omitempty"`
+}
+
+type UpdateAutoscalingSettingsResponse struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
 }
 
 func NewClient(apiKey string, endpoint string) (*Client, error) {
@@ -105,4 +122,56 @@ func (client *Client) ListInstanceTypes(ctx context.Context) (_ []InstanceType, 
 	}
 
 	return payload.InstanceTypes, nil
+}
+
+func (client *Client) UpdateDeploymentAutoscalingSettings(ctx context.Context, modelID string, deploymentID string, settings AutoscalingSettings) (_ UpdateAutoscalingSettingsResponse, returnErr error) {
+	if modelID == "" {
+		return UpdateAutoscalingSettingsResponse{}, errors.New("missing model ID")
+	}
+
+	if deploymentID == "" {
+		return UpdateAutoscalingSettingsResponse{}, errors.New("missing deployment ID")
+	}
+
+	requestBody, err := json.Marshal(settings)
+	if err != nil {
+		return UpdateAutoscalingSettingsResponse{}, fmt.Errorf("encode autoscaling settings request: %w", err)
+	}
+
+	requestURL := client.baseURL.JoinPath("v1", "models", modelID, "deployments", deploymentID, "autoscaling_settings")
+	request, err := http.NewRequestWithContext(ctx, http.MethodPatch, requestURL.String(), bytes.NewReader(requestBody))
+	if err != nil {
+		return UpdateAutoscalingSettingsResponse{}, fmt.Errorf("create autoscaling settings request: %w", err)
+	}
+
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+client.apiKey)
+	request.Header.Set("Content-Type", "application/json")
+
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return UpdateAutoscalingSettingsResponse{}, fmt.Errorf("update autoscaling settings: %w", err)
+	}
+	defer func() {
+		closeErr := response.Body.Close()
+		if returnErr == nil && closeErr != nil {
+			returnErr = fmt.Errorf("close autoscaling settings response body: %w", closeErr)
+		}
+	}()
+
+	if response.StatusCode != http.StatusOK {
+		body, readErr := io.ReadAll(io.LimitReader(response.Body, responsePreviewByteLimit))
+		if readErr != nil {
+			return UpdateAutoscalingSettingsResponse{}, fmt.Errorf("update autoscaling settings: status %s; read error body: %w", response.Status, readErr)
+		}
+
+		return UpdateAutoscalingSettingsResponse{}, fmt.Errorf("update autoscaling settings: status %s: %s", response.Status, strings.TrimSpace(string(body)))
+	}
+
+	var payload UpdateAutoscalingSettingsResponse
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		return UpdateAutoscalingSettingsResponse{}, fmt.Errorf("decode autoscaling settings response: %w", err)
+	}
+
+	return payload, nil
 }
