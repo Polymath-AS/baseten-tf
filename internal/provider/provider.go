@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/polymath-as/baseten-tf/internal/baseten"
 )
 
 const defaultEndpoint = "https://api.baseten.co"
@@ -86,6 +87,18 @@ func (provider *basetenProvider) Configure(ctx context.Context, request framewor
 		)
 		return
 	}
+
+	client, err := baseten.NewClient(apiKey, endpoint)
+	if err != nil {
+		response.Diagnostics.AddError(
+			"Invalid Baseten provider configuration",
+			err.Error(),
+		)
+		return
+	}
+
+	response.DataSourceData = client
+	response.ResourceData = client
 }
 
 func (provider *basetenProvider) Resources(_ context.Context) []func() resource.Resource {
