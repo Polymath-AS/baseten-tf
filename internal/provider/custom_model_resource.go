@@ -335,17 +335,29 @@ func (customResource *customModelResource) Delete(ctx context.Context, request r
 		return
 	}
 
-	_, deploymentErr := customResource.client.DeleteDeployment(ctx, state.ModelID.ValueString(), state.DeploymentID.ValueString())
-	if deploymentErr != nil {
-		response.Diagnostics.AddError("Unable to delete Baseten deployment", deploymentErr.Error())
+	if err := deleteCustomModel(ctx, customResource.client, state.ModelID.ValueString(), state.DeploymentID.ValueString()); err != nil {
+		response.Diagnostics.AddError("Unable to delete Baseten custom model", err.Error())
 		return
+	}
+}
+
+func deleteCustomModel(ctx context.Context, client customModelClient, modelID string, deploymentID string) error {
+	_, deploymentErr := client.DeleteDeployment(ctx, modelID, deploymentID)
+	if deploymentErr != nil && !isStatusCode(deploymentErr, 404) {
+		return fmt.Errorf("delete deployment: %w", deploymentErr)
 	}
 
-	_, modelErr := customResource.client.DeleteModel(ctx, state.ModelID.ValueString())
-	if modelErr != nil {
-		response.Diagnostics.AddError("Unable to delete Baseten model", modelErr.Error())
-		return
+	_, modelErr := client.DeleteModel(ctx, modelID)
+	if modelErr != nil && !isStatusCode(modelErr, 404) {
+		return fmt.Errorf("delete model: %w", modelErr)
 	}
+
+	return nil
+}
+
+func isStatusCode(err error, statusCode int) bool {
+	var statusError baseten.StatusError
+	return errors.As(err, &statusError) && statusError.StatusCode == statusCode
 }
 
 func createCustomModel(ctx context.Context, client customModelClient, input customModelInput, writeArchive archiveWriter, uploadArchive archiveUploader) (customModelOutput, error) {

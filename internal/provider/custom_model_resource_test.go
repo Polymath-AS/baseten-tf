@@ -18,6 +18,8 @@ type fakeCustomModelClient struct {
 	autoscalingModelID      string
 	autoscalingDeploymentID string
 	autoscalingMin          *int64
+	deleteDeploymentErr     error
+	deleteModelErr          error
 }
 
 func (client *fakeCustomModelClient) PrepareModelUpload(_ context.Context, request baseten.PrepareModelUploadRequest) (baseten.PrepareModelUploadResponse, error) {
@@ -59,11 +61,11 @@ func (client *fakeCustomModelClient) GetDeployment(context.Context, string, stri
 }
 
 func (client *fakeCustomModelClient) DeleteDeployment(context.Context, string, string) (bool, error) {
-	return true, nil
+	return client.deleteDeploymentErr == nil, client.deleteDeploymentErr
 }
 
 func (client *fakeCustomModelClient) DeleteModel(context.Context, string) (bool, error) {
-	return true, nil
+	return client.deleteModelErr == nil, client.deleteModelErr
 }
 
 func TestCreateCustomModelOrchestratesUploadCreateAndScaleToZero(t *testing.T) {
@@ -178,6 +180,29 @@ func TestUpdateCustomModelAutoscalingUsesStateIDs(t *testing.T) {
 
 	if output.DeploymentStatus != "ACTIVE" {
 		t.Fatalf("DeploymentStatus = %q, want ACTIVE", output.DeploymentStatus)
+	}
+}
+
+func TestDeleteCustomModelIgnoresNotFound(t *testing.T) {
+	client := &fakeCustomModelClient{
+		deleteDeploymentErr: baseten.StatusError{StatusCode: 404, Status: "404 Not Found", Body: "not found"},
+		deleteModelErr:      baseten.StatusError{StatusCode: 404, Status: "404 Not Found", Body: "not found"},
+	}
+
+	err := deleteCustomModel(context.Background(), client, "model-123", "deployment-456")
+	if err != nil {
+		t.Fatalf("deleteCustomModel: %v", err)
+	}
+}
+
+func TestDeleteCustomModelReturnsOtherErrors(t *testing.T) {
+	client := &fakeCustomModelClient{
+		deleteDeploymentErr: baseten.StatusError{StatusCode: 500, Status: "500 Internal Server Error", Body: "failed"},
+	}
+
+	err := deleteCustomModel(context.Background(), client, "model-123", "deployment-456")
+	if err == nil {
+		t.Fatal("deleteCustomModel ignored a non-404 deployment delete error")
 	}
 }
 
