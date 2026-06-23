@@ -42,6 +42,8 @@ resource "baseten_custom_model" "example" {
   raw_config  = file("${local.model_path}/config.yaml")
   config_json = jsonencode(yamldecode(file("${local.model_path}/config.yaml")))
 
+  environment_name = "production"
+
   min_replica        = 0
   max_replica        = 1
   scale_down_delay   = 120

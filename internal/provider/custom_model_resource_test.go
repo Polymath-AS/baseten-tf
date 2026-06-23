@@ -14,6 +14,7 @@ type fakeCustomModelClient struct {
 	preparedName            string
 	createdName             string
 	createdS3Key            string
+	preparedEnvironmentName *string
 	autoscalingModelID      string
 	autoscalingDeploymentID string
 	autoscalingMin          *int64
@@ -23,6 +24,7 @@ func (client *fakeCustomModelClient) PrepareModelUpload(_ context.Context, reque
 	if request.Name != nil {
 		client.preparedName = *request.Name
 	}
+	client.preparedEnvironmentName = request.Deployment.EnvironmentName
 
 	bucket := "bucket"
 	key := "archive.tar.gz"
@@ -89,11 +91,12 @@ func TestCreateCustomModelOrchestratesUploadCreateAndScaleToZero(t *testing.T) {
 	}
 
 	output, err := createCustomModel(context.Background(), client, customModelInput{
-		Name:       "custom-model",
-		SourcePath: "/models/demo",
-		ConfigJSON: `{"model_name":"demo"}`,
-		MinReplica: 0,
-		MaxReplica: 1,
+		Name:            "custom-model",
+		SourcePath:      "/models/demo",
+		ConfigJSON:      `{"model_name":"demo"}`,
+		EnvironmentName: stringValuePointer("production"),
+		MinReplica:      0,
+		MaxReplica:      1,
 	}, writeArchive, uploadArchive)
 	if err != nil {
 		t.Fatalf("createCustomModel: %v", err)
@@ -105,6 +108,10 @@ func TestCreateCustomModelOrchestratesUploadCreateAndScaleToZero(t *testing.T) {
 
 	if client.createdS3Key != "archive.tar.gz" {
 		t.Fatalf("createdS3Key = %q, want archive.tar.gz", client.createdS3Key)
+	}
+
+	if client.preparedEnvironmentName == nil || *client.preparedEnvironmentName != "production" {
+		t.Fatalf("preparedEnvironmentName = %v, want production", client.preparedEnvironmentName)
 	}
 
 	if uploadedBytes != "archive" {
@@ -184,4 +191,8 @@ func TestOptionalHelpers(t *testing.T) {
 	if buffer.Len() != 0 {
 		t.Fatalf("buffer length = %d, want 0", buffer.Len())
 	}
+}
+
+func stringValuePointer(value string) *string {
+	return &value
 }

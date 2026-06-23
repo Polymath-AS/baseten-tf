@@ -35,35 +35,39 @@ type customModelResource struct {
 }
 
 type customModelResourceModel struct {
-	ID                   types.String `tfsdk:"id"`
-	Name                 types.String `tfsdk:"name"`
-	SourcePath           types.String `tfsdk:"source_path"`
-	SourceHash           types.String `tfsdk:"source_hash"`
-	ConfigJSON           types.String `tfsdk:"config_json"`
-	RawConfig            types.String `tfsdk:"raw_config"`
-	DeploymentName       types.String `tfsdk:"deployment_name"`
-	MinReplica           types.Int64  `tfsdk:"min_replica"`
-	MaxReplica           types.Int64  `tfsdk:"max_replica"`
-	ScaleDownDelay       types.Int64  `tfsdk:"scale_down_delay"`
-	ConcurrencyTarget    types.Int64  `tfsdk:"concurrency_target"`
-	ModelID              types.String `tfsdk:"model_id"`
-	DeploymentID         types.String `tfsdk:"deployment_id"`
-	DeploymentStatus     types.String `tfsdk:"deployment_status"`
-	ActiveReplicaCount   types.Int64  `tfsdk:"active_replica_count"`
-	DisableArchiveAccess types.Bool   `tfsdk:"disable_archive_access"`
+	ID                      types.String `tfsdk:"id"`
+	Name                    types.String `tfsdk:"name"`
+	SourcePath              types.String `tfsdk:"source_path"`
+	SourceHash              types.String `tfsdk:"source_hash"`
+	ConfigJSON              types.String `tfsdk:"config_json"`
+	RawConfig               types.String `tfsdk:"raw_config"`
+	EnvironmentName         types.String `tfsdk:"environment_name"`
+	PreserveEnvInstanceType types.Bool   `tfsdk:"preserve_env_instance_type"`
+	DeploymentName          types.String `tfsdk:"deployment_name"`
+	MinReplica              types.Int64  `tfsdk:"min_replica"`
+	MaxReplica              types.Int64  `tfsdk:"max_replica"`
+	ScaleDownDelay          types.Int64  `tfsdk:"scale_down_delay"`
+	ConcurrencyTarget       types.Int64  `tfsdk:"concurrency_target"`
+	ModelID                 types.String `tfsdk:"model_id"`
+	DeploymentID            types.String `tfsdk:"deployment_id"`
+	DeploymentStatus        types.String `tfsdk:"deployment_status"`
+	ActiveReplicaCount      types.Int64  `tfsdk:"active_replica_count"`
+	DisableArchiveAccess    types.Bool   `tfsdk:"disable_archive_access"`
 }
 
 type customModelInput struct {
-	Name                 string
-	SourcePath           string
-	ConfigJSON           string
-	RawConfig            *string
-	DeploymentName       *string
-	MinReplica           int64
-	MaxReplica           int64
-	ScaleDownDelay       *int64
-	ConcurrencyTarget    *int64
-	DisableArchiveAccess bool
+	Name                    string
+	SourcePath              string
+	ConfigJSON              string
+	RawConfig               *string
+	EnvironmentName         *string
+	PreserveEnvInstanceType *bool
+	DeploymentName          *string
+	MinReplica              int64
+	MaxReplica              int64
+	ScaleDownDelay          *int64
+	ConcurrencyTarget       *int64
+	DisableArchiveAccess    bool
 }
 
 type customModelOutput struct {
@@ -130,6 +134,20 @@ func (customResource *customModelResource) Schema(_ context.Context, _ resource.
 				MarkdownDescription: "Original config.yaml contents to persist with the deployment.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"environment_name": schema.StringAttribute{
+				Optional:            true,
+				MarkdownDescription: "Baseten environment to push to, such as production, for a stable endpoint.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"preserve_env_instance_type": schema.BoolAttribute{
+				Optional:            true,
+				MarkdownDescription: "When environment_name targets an existing environment, preserve that environment instance type instead of the config instance type.",
+				PlanModifiers: []planmodifier.Bool{
+					boolplanmodifier.RequiresReplace(),
 				},
 			},
 			"deployment_name": schema.StringAttribute{
@@ -202,16 +220,18 @@ func (customResource *customModelResource) Create(ctx context.Context, request r
 	}
 
 	input := customModelInput{
-		Name:                 plan.Name.ValueString(),
-		SourcePath:           plan.SourcePath.ValueString(),
-		ConfigJSON:           plan.ConfigJSON.ValueString(),
-		RawConfig:            optionalStringPointer(plan.RawConfig),
-		DeploymentName:       optionalStringPointer(plan.DeploymentName),
-		MinReplica:           plan.MinReplica.ValueInt64(),
-		MaxReplica:           plan.MaxReplica.ValueInt64(),
-		ScaleDownDelay:       optionalInt64Pointer(plan.ScaleDownDelay),
-		ConcurrencyTarget:    optionalInt64Pointer(plan.ConcurrencyTarget),
-		DisableArchiveAccess: optionalBoolValue(plan.DisableArchiveAccess),
+		Name:                    plan.Name.ValueString(),
+		SourcePath:              plan.SourcePath.ValueString(),
+		ConfigJSON:              plan.ConfigJSON.ValueString(),
+		RawConfig:               optionalStringPointer(plan.RawConfig),
+		EnvironmentName:         optionalStringPointer(plan.EnvironmentName),
+		PreserveEnvInstanceType: optionalBoolPointer(plan.PreserveEnvInstanceType),
+		DeploymentName:          optionalStringPointer(plan.DeploymentName),
+		MinReplica:              plan.MinReplica.ValueInt64(),
+		MaxReplica:              plan.MaxReplica.ValueInt64(),
+		ScaleDownDelay:          optionalInt64Pointer(plan.ScaleDownDelay),
+		ConcurrencyTarget:       optionalInt64Pointer(plan.ConcurrencyTarget),
+		DisableArchiveAccess:    optionalBoolValue(plan.DisableArchiveAccess),
 	}
 
 	output, err := createCustomModel(ctx, customResource.client, input, writeCustomModelArchive, uploadCustomModelArchive)
@@ -339,10 +359,12 @@ func createCustomModel(ctx context.Context, client customModelClient, input cust
 	}
 
 	deploymentPayload := baseten.DeploymentArchivePayload{
-		Config:               json.RawMessage(input.ConfigJSON),
-		RawConfig:            input.RawConfig,
-		DeploymentName:       input.DeploymentName,
-		DeployTimeoutMinutes: nil,
+		Config:                  json.RawMessage(input.ConfigJSON),
+		RawConfig:               input.RawConfig,
+		EnvironmentName:         input.EnvironmentName,
+		PreserveEnvInstanceType: input.PreserveEnvInstanceType,
+		DeploymentName:          input.DeploymentName,
+		DeployTimeoutMinutes:    nil,
 	}
 
 	uploadRequestName := input.Name
@@ -448,4 +470,13 @@ func optionalBoolValue(value types.Bool) bool {
 	}
 
 	return value.ValueBool()
+}
+
+func optionalBoolPointer(value types.Bool) *bool {
+	if value.IsNull() || value.IsUnknown() {
+		return nil
+	}
+
+	boolValue := value.ValueBool()
+	return &boolValue
 }
