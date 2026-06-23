@@ -93,6 +93,17 @@ type deploymentTombstone struct {
 	ModelID string `json:"model_id"`
 }
 
+type StatusError struct {
+	Operation  string
+	Status     string
+	StatusCode int
+	Body       string
+}
+
+func (err StatusError) Error() string {
+	return fmt.Sprintf("%s: status %s: %s", err.Operation, err.Status, err.Body)
+}
+
 type createModelRequestBody struct {
 	Source modelArchiveSource `json:"source"`
 }
@@ -325,5 +336,10 @@ func responseStatusError(operation string, response *http.Response) error {
 		return fmt.Errorf("%s: status %s; read error body: %w", operation, response.Status, readErr)
 	}
 
-	return fmt.Errorf("%s: status %s: %s", operation, response.Status, strings.TrimSpace(string(body)))
+	return StatusError{
+		Operation:  operation,
+		Status:     response.Status,
+		StatusCode: response.StatusCode,
+		Body:       strings.TrimSpace(string(body)),
+	}
 }

@@ -102,7 +102,9 @@ func (provider *basetenProvider) Configure(ctx context.Context, request framewor
 }
 
 func (provider *basetenProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{}
+	return []func() resource.Resource{
+		NewCustomModelResource,
+	}
 }
 
 func (provider *basetenProvider) DataSources(_ context.Context) []func() datasource.DataSource {
