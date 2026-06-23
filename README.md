@@ -53,3 +53,11 @@ resource "baseten_custom_model" "example" {
 
 `min_replica = 0` enables scale-to-zero. Update `source_hash` when local model
 contents change so Terraform replaces the Baseten deployment with a new archive.
+
+## Large model artifacts
+
+Archives are streamed into Baseten's temporary S3 upload location with multipart
+upload, so the provider does not keep the full tarball in memory. For models
+with hundreds of GB of weights, prefer keeping weights in external storage or a
+model registry and referencing them from `config.yaml`; use the Terraform upload
+path for deployment code and smaller artifacts.
