@@ -9,11 +9,13 @@ import (
 	"io"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	schemavalidator "github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/polymath-as/baseten-tf/internal/archive"
 	"github.com/polymath-as/baseten-tf/internal/baseten"
@@ -116,6 +118,9 @@ func (customResource *customModelResource) Schema(_ context.Context, _ resource.
 			"config_json": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Baseten deployment config as a JSON object string.",
+				Validators: []schemavalidator.String{
+					jsonObjectStringValidator{},
+				},
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -136,10 +141,28 @@ func (customResource *customModelResource) Schema(_ context.Context, _ resource.
 			"min_replica": schema.Int64Attribute{
 				Required:            true,
 				MarkdownDescription: "Minimum replica count. Use 0 to allow scale-to-zero.",
+				Validators: []schemavalidator.Int64{
+					int64validator.AtLeast(0),
+				},
 			},
-			"max_replica":          schema.Int64Attribute{Required: true},
-			"scale_down_delay":     schema.Int64Attribute{Optional: true},
-			"concurrency_target":   schema.Int64Attribute{Optional: true},
+			"max_replica": schema.Int64Attribute{
+				Required: true,
+				Validators: []schemavalidator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
+			"scale_down_delay": schema.Int64Attribute{
+				Optional: true,
+				Validators: []schemavalidator.Int64{
+					int64validator.AtLeast(0),
+				},
+			},
+			"concurrency_target": schema.Int64Attribute{
+				Optional: true,
+				Validators: []schemavalidator.Int64{
+					int64validator.AtLeast(1),
+				},
+			},
 			"model_id":             schema.StringAttribute{Computed: true},
 			"deployment_id":        schema.StringAttribute{Computed: true},
 			"deployment_status":    schema.StringAttribute{Computed: true},
