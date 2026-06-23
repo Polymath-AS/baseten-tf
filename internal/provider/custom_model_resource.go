@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -365,11 +364,6 @@ func createCustomModel(ctx context.Context, client customModelClient, input cust
 		return customModelOutput{}, errors.New("config_json must be valid JSON")
 	}
 
-	var archiveBuffer bytes.Buffer
-	if err := writeArchive(input.SourcePath, &archiveBuffer); err != nil {
-		return customModelOutput{}, fmt.Errorf("archive custom model: %w", err)
-	}
-
 	deploymentPayload := baseten.DeploymentArchivePayload{
 		Config:                  json.RawMessage(input.ConfigJSON),
 		RawConfig:               input.RawConfig,
@@ -388,7 +382,7 @@ func createCustomModel(ctx context.Context, client customModelClient, input cust
 		return customModelOutput{}, fmt.Errorf("prepare model upload: %w", err)
 	}
 
-	if err := uploadArchive(ctx, uploadResponse, bytes.NewReader(archiveBuffer.Bytes())); err != nil {
+	if err := streamArchiveUpload(ctx, input.SourcePath, uploadResponse, writeArchive, uploadArchive); err != nil {
 		return customModelOutput{}, fmt.Errorf("upload model archive: %w", err)
 	}
 
@@ -431,6 +425,38 @@ func createCustomModel(ctx context.Context, client customModelClient, input cust
 		DeploymentStatus:   deployment.Status,
 		ActiveReplicaCount: deployment.ActiveReplicaCount,
 	}, nil
+}
+
+func streamArchiveUpload(ctx context.Context, sourcePath string, uploadResponse baseten.PrepareModelUploadResponse, writeArchive archiveWriter, uploadArchive archiveUploader) error {
+	reader, writer := io.Pipe()
+	archiveErr := make(chan error, 1)
+
+	go func() {
+		writeErr := writeArchive(sourcePath, writer)
+		if writeErr != nil {
+			archiveErr <- writeErr
+			_ = writer.CloseWithError(writeErr)
+			return
+		}
+
+		archiveErr <- writer.Close()
+	}()
+
+	uploadErr := uploadArchive(ctx, uploadResponse, reader)
+	if uploadErr != nil {
+		_ = reader.CloseWithError(uploadErr)
+	}
+
+	writeErr := <-archiveErr
+	if uploadErr != nil {
+		return uploadErr
+	}
+
+	if writeErr != nil {
+		return fmt.Errorf("write archive stream: %w", writeErr)
+	}
+
+	return nil
 }
 
 func waitForDeploymentReady(ctx context.Context, client customModelClient, modelID string, deploymentID string, pollInterval time.Duration) (baseten.Deployment, error) {

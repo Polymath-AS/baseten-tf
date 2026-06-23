@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"testing"
@@ -129,6 +128,73 @@ func TestCreateCustomModelOrchestratesUploadCreateAndScaleToZero(t *testing.T) {
 	}
 }
 
+func TestStreamArchiveUploadDoesNotBufferArchive(t *testing.T) {
+	writeStarted := make(chan struct{})
+	readFinished := make(chan struct{})
+
+	writeArchive := func(_ string, writer io.Writer) error {
+		close(writeStarted)
+		_, err := writer.Write([]byte("archive"))
+		if err != nil {
+			return err
+		}
+
+		<-readFinished
+		_, err = writer.Write([]byte(" bytes"))
+		return err
+	}
+
+	uploadArchive := func(_ context.Context, _ baseten.PrepareModelUploadResponse, reader io.Reader) error {
+		<-writeStarted
+		buffer := make([]byte, len("archive"))
+		if _, err := io.ReadFull(reader, buffer); err != nil {
+			return err
+		}
+
+		if string(buffer) != "archive" {
+			t.Fatalf("first read = %q, want archive", string(buffer))
+		}
+
+		close(readFinished)
+		remaining, err := io.ReadAll(reader)
+		if err != nil {
+			return err
+		}
+
+		if string(remaining) != " bytes" {
+			t.Fatalf("remaining = %q, want bytes", string(remaining))
+		}
+
+		return nil
+	}
+
+	err := streamArchiveUpload(context.Background(), "/models/demo", baseten.PrepareModelUploadResponse{}, writeArchive, uploadArchive)
+	if err != nil {
+		t.Fatalf("streamArchiveUpload: %v", err)
+	}
+}
+
+func TestStreamArchiveUploadReturnsArchiveErrors(t *testing.T) {
+	writeArchive := func(_ string, writer io.Writer) error {
+		_, err := writer.Write([]byte("partial"))
+		if err != nil {
+			return err
+		}
+
+		return errArchiveFailed{}
+	}
+
+	uploadArchive := func(_ context.Context, _ baseten.PrepareModelUploadResponse, reader io.Reader) error {
+		_, err := io.ReadAll(reader)
+		return err
+	}
+
+	err := streamArchiveUpload(context.Background(), "/models/demo", baseten.PrepareModelUploadResponse{}, writeArchive, uploadArchive)
+	if err == nil {
+		t.Fatal("streamArchiveUpload ignored archive failure")
+	}
+}
+
 func TestCreateCustomModelRejectsInvalidConfigJSON(t *testing.T) {
 	client := &fakeCustomModelClient{}
 	writeArchive := func(_ string, writer io.Writer) error {
@@ -211,13 +277,14 @@ func TestOptionalHelpers(t *testing.T) {
 	if value == nil || *value != 0 {
 		t.Fatalf("int64ValuePointer(0) = %v, want pointer to zero", value)
 	}
-
-	var buffer bytes.Buffer
-	if buffer.Len() != 0 {
-		t.Fatalf("buffer length = %d, want 0", buffer.Len())
-	}
 }
 
 func stringValuePointer(value string) *string {
 	return &value
+}
+
+type errArchiveFailed struct{}
+
+func (errArchiveFailed) Error() string {
+	return "archive failed"
 }
