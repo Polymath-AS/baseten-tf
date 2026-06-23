@@ -8,11 +8,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-type s3PutObjectClient interface {
-	PutObject(context.Context, *s3.PutObjectInput, ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+const uploadPartSizeBytes = 64 * 1024 * 1024
+const uploadConcurrency = 4
+
+type s3UploadClient interface {
+	UploadObject(context.Context, *transfermanager.UploadObjectInput, ...func(*transfermanager.Options)) (*transfermanager.UploadObjectOutput, error)
 }
 
 func UploadModelArchive(ctx context.Context, upload PrepareModelUploadResponse, body io.Reader) error {
@@ -37,11 +41,17 @@ func UploadModelArchive(ctx context.Context, upload PrepareModelUploadResponse, 
 		return fmt.Errorf("load upload AWS config: %w", err)
 	}
 
-	uploader := s3.NewFromConfig(awsConfig)
+	uploader := transfermanager.New(
+		s3.NewFromConfig(awsConfig),
+		func(options *transfermanager.Options) {
+			options.PartSizeBytes = uploadPartSizeBytes
+			options.Concurrency = uploadConcurrency
+		},
+	)
 	return uploadModelArchiveWithClient(ctx, uploader, upload.S3Bucket, upload.S3Key, body)
 }
 
-func uploadModelArchiveWithClient(ctx context.Context, uploader s3PutObjectClient, bucket *string, key *string, body io.Reader) error {
+func uploadModelArchiveWithClient(ctx context.Context, uploader s3UploadClient, bucket *string, key *string, body io.Reader) error {
 	if bucket == nil || *bucket == "" {
 		return errors.New("missing upload S3 bucket")
 	}
@@ -50,7 +60,7 @@ func uploadModelArchiveWithClient(ctx context.Context, uploader s3PutObjectClien
 		return errors.New("missing upload S3 key")
 	}
 
-	_, err := uploader.PutObject(ctx, &s3.PutObjectInput{
+	_, err := uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
 		Bucket: bucket,
 		Key:    key,
 		Body:   body,

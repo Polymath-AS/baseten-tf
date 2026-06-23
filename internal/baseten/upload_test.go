@@ -6,16 +6,16 @@ import (
 	"io"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 )
 
-type fakeS3PutObjectClient struct {
+type fakeS3UploadClient struct {
 	bucket string
 	key    string
 	body   string
 }
 
-func (client *fakeS3PutObjectClient) PutObject(_ context.Context, input *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
+func (client *fakeS3UploadClient) UploadObject(_ context.Context, input *transfermanager.UploadObjectInput, _ ...func(*transfermanager.Options)) (*transfermanager.UploadObjectOutput, error) {
 	if input.Bucket != nil {
 		client.bucket = *input.Bucket
 	}
@@ -33,11 +33,11 @@ func (client *fakeS3PutObjectClient) PutObject(_ context.Context, input *s3.PutO
 		client.body = string(body)
 	}
 
-	return &s3.PutObjectOutput{}, nil
+	return &transfermanager.UploadObjectOutput{}, nil
 }
 
 func TestUploadModelArchiveWithClient(t *testing.T) {
-	uploader := &fakeS3PutObjectClient{}
+	uploader := &fakeS3UploadClient{}
 	bucket := "baseten-upload"
 	key := "archives/model.tar.gz"
 	body := bytes.NewReader([]byte("archive bytes"))
@@ -61,7 +61,7 @@ func TestUploadModelArchiveWithClient(t *testing.T) {
 }
 
 func TestUploadModelArchiveWithClientRejectsMissingDestination(t *testing.T) {
-	uploader := &fakeS3PutObjectClient{}
+	uploader := &fakeS3UploadClient{}
 	key := "archives/model.tar.gz"
 	body := bytes.NewReader([]byte("archive bytes"))
 
