@@ -36,6 +36,7 @@ type customModelResourceModel struct {
 	ID                   types.String `tfsdk:"id"`
 	Name                 types.String `tfsdk:"name"`
 	SourcePath           types.String `tfsdk:"source_path"`
+	SourceHash           types.String `tfsdk:"source_hash"`
 	ConfigJSON           types.String `tfsdk:"config_json"`
 	RawConfig            types.String `tfsdk:"raw_config"`
 	DeploymentName       types.String `tfsdk:"deployment_name"`
@@ -101,6 +102,13 @@ func (customResource *customModelResource) Schema(_ context.Context, _ resource.
 			"source_path": schema.StringAttribute{
 				Required:            true,
 				MarkdownDescription: "Path to the local model directory to archive and upload.",
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"source_hash": schema.StringAttribute{
+				Required:            true,
+				MarkdownDescription: "Caller-provided hash of the local model source. Changing this value replaces the deployment.",
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
