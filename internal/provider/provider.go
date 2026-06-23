@@ -106,5 +106,7 @@ func (provider *basetenProvider) Resources(_ context.Context) []func() resource.
 }
 
 func (provider *basetenProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewInstanceTypesDataSource,
+	}
 }
