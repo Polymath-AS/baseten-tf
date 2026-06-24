@@ -30,4 +30,10 @@ resource "baseten_custom_model" "example" {
   max_replica        = 1
   scale_down_delay   = 120
   concurrency_target = 2
+
+  timeouts {
+    create = "90m"
+    update = "10m"
+    delete = "10m"
+  }
 }

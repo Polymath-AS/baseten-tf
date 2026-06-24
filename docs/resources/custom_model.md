@@ -43,6 +43,7 @@ reconstruct local-only inputs such as `source_path`, `source_hash`, and
 - `preserve_env_instance_type` (Boolean) When environment_name targets an existing environment, preserve that environment instance type instead of the config instance type.
 - `raw_config` (String) Original config.yaml contents to persist with the deployment.
 - `scale_down_delay` (Number)
+- `timeouts` (Block, Optional) (see [below for nested schema](#nestedblock--timeouts))
 
 ### Read-Only
 
@@ -51,3 +52,12 @@ reconstruct local-only inputs such as `source_path`, `source_hash`, and
 - `deployment_status` (String)
 - `id` (String) The ID of this resource.
 - `model_id` (String)
+
+<a id="nestedblock--timeouts"></a>
+### Nested Schema for `timeouts`
+
+Optional:
+
+- `create` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).
+- `delete` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours). Setting a timeout for a Delete operation is only applicable if changes are saved into state before the destroy operation occurs.
+- `update` (String) A string that can be [parsed as a duration](https://pkg.go.dev/time#ParseDuration) consisting of numbers and unit suffixes, such as "30s" or "2h45m". Valid time units are "s" (seconds), "m" (minutes), "h" (hours).

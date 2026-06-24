@@ -51,11 +51,18 @@ resource "baseten_custom_model" "example" {
   max_replica        = 1
   scale_down_delay   = 120
   concurrency_target = 2
+
+  timeouts {
+    create = "90m"
+    update = "10m"
+    delete = "10m"
+  }
 }
 ```
 
 `min_replica = 0` enables scale-to-zero. Update `source_hash` when local model
 contents change so Terraform replaces the Baseten deployment with a new archive.
+Long builds can raise the `timeouts.create` value.
 
 Existing deployments can be imported by model and deployment ID:
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	resourcetimeouts "github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -37,24 +38,25 @@ type customModelResource struct {
 var _ resource.ResourceWithImportState = &customModelResource{}
 
 type customModelResourceModel struct {
-	ID                      types.String `tfsdk:"id"`
-	Name                    types.String `tfsdk:"name"`
-	SourcePath              types.String `tfsdk:"source_path"`
-	SourceHash              types.String `tfsdk:"source_hash"`
-	ConfigJSON              types.String `tfsdk:"config_json"`
-	RawConfig               types.String `tfsdk:"raw_config"`
-	EnvironmentName         types.String `tfsdk:"environment_name"`
-	PreserveEnvInstanceType types.Bool   `tfsdk:"preserve_env_instance_type"`
-	DeploymentName          types.String `tfsdk:"deployment_name"`
-	MinReplica              types.Int64  `tfsdk:"min_replica"`
-	MaxReplica              types.Int64  `tfsdk:"max_replica"`
-	ScaleDownDelay          types.Int64  `tfsdk:"scale_down_delay"`
-	ConcurrencyTarget       types.Int64  `tfsdk:"concurrency_target"`
-	ModelID                 types.String `tfsdk:"model_id"`
-	DeploymentID            types.String `tfsdk:"deployment_id"`
-	DeploymentStatus        types.String `tfsdk:"deployment_status"`
-	ActiveReplicaCount      types.Int64  `tfsdk:"active_replica_count"`
-	DisableArchiveAccess    types.Bool   `tfsdk:"disable_archive_access"`
+	ID                      types.String           `tfsdk:"id"`
+	Name                    types.String           `tfsdk:"name"`
+	SourcePath              types.String           `tfsdk:"source_path"`
+	SourceHash              types.String           `tfsdk:"source_hash"`
+	ConfigJSON              types.String           `tfsdk:"config_json"`
+	RawConfig               types.String           `tfsdk:"raw_config"`
+	EnvironmentName         types.String           `tfsdk:"environment_name"`
+	PreserveEnvInstanceType types.Bool             `tfsdk:"preserve_env_instance_type"`
+	DeploymentName          types.String           `tfsdk:"deployment_name"`
+	MinReplica              types.Int64            `tfsdk:"min_replica"`
+	MaxReplica              types.Int64            `tfsdk:"max_replica"`
+	ScaleDownDelay          types.Int64            `tfsdk:"scale_down_delay"`
+	ConcurrencyTarget       types.Int64            `tfsdk:"concurrency_target"`
+	ModelID                 types.String           `tfsdk:"model_id"`
+	DeploymentID            types.String           `tfsdk:"deployment_id"`
+	DeploymentStatus        types.String           `tfsdk:"deployment_status"`
+	ActiveReplicaCount      types.Int64            `tfsdk:"active_replica_count"`
+	DisableArchiveAccess    types.Bool             `tfsdk:"disable_archive_access"`
+	Timeouts                resourcetimeouts.Value `tfsdk:"timeouts"`
 }
 
 type customModelInput struct {
@@ -90,6 +92,12 @@ const deploymentPollInterval = 30 * time.Second
 
 const customModelImportIDSeparator = ":"
 
+const defaultCustomModelCreateTimeout = 90 * time.Minute
+
+const defaultCustomModelUpdateTimeout = 10 * time.Minute
+
+const defaultCustomModelDeleteTimeout = 10 * time.Minute
+
 func NewCustomModelResource() resource.Resource {
 	return &customModelResource{}
 }
@@ -98,7 +106,7 @@ func (customResource *customModelResource) Metadata(_ context.Context, request r
 	response.TypeName = request.ProviderTypeName + "_custom_model"
 }
 
-func (customResource *customModelResource) Schema(_ context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
+func (customResource *customModelResource) Schema(ctx context.Context, _ resource.SchemaRequest, response *resource.SchemaResponse) {
 	response.Schema = schema.Schema{
 		MarkdownDescription: "Deploys a Baseten custom model archive and configures deployment autoscaling.",
 		Attributes: map[string]schema.Attribute{
@@ -196,6 +204,13 @@ func (customResource *customModelResource) Schema(_ context.Context, _ resource.
 				},
 			},
 		},
+		Blocks: map[string]schema.Block{
+			"timeouts": resourcetimeouts.Block(ctx, resourcetimeouts.Opts{
+				Create: true,
+				Update: true,
+				Delete: true,
+			}),
+		},
 	}
 }
 
@@ -223,6 +238,15 @@ func (customResource *customModelResource) Create(ctx context.Context, request r
 		return
 	}
 
+	createTimeout, timeoutDiagnostics := plan.Timeouts.Create(ctx, defaultCustomModelCreateTimeout)
+	response.Diagnostics.Append(timeoutDiagnostics...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	createCtx, cancel := context.WithTimeout(ctx, createTimeout)
+	defer cancel()
+
 	input := customModelInput{
 		Name:                    plan.Name.ValueString(),
 		SourcePath:              plan.SourcePath.ValueString(),
@@ -238,7 +262,7 @@ func (customResource *customModelResource) Create(ctx context.Context, request r
 		DisableArchiveAccess:    optionalBoolValue(plan.DisableArchiveAccess),
 	}
 
-	output, err := createCustomModel(ctx, customResource.client, input, writeCustomModelArchive, uploadCustomModelArchive)
+	output, err := createCustomModel(createCtx, customResource.client, input, writeCustomModelArchive, uploadCustomModelArchive)
 	if err != nil {
 		response.Diagnostics.AddError("Unable to create Baseten custom model", err.Error())
 		return
@@ -290,7 +314,16 @@ func (customResource *customModelResource) Update(ctx context.Context, request r
 		return
 	}
 
-	output, err := updateCustomModelAutoscaling(ctx, customResource.client, state, plan)
+	updateTimeout, timeoutDiagnostics := plan.Timeouts.Update(ctx, defaultCustomModelUpdateTimeout)
+	response.Diagnostics.Append(timeoutDiagnostics...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	updateCtx, cancel := context.WithTimeout(ctx, updateTimeout)
+	defer cancel()
+
+	output, err := updateCustomModelAutoscaling(updateCtx, customResource.client, state, plan)
 	if err != nil {
 		response.Diagnostics.AddError("Unable to update Baseten custom model autoscaling", err.Error())
 		return
@@ -339,7 +372,16 @@ func (customResource *customModelResource) Delete(ctx context.Context, request r
 		return
 	}
 
-	if err := deleteCustomModel(ctx, customResource.client, state.ModelID.ValueString(), state.DeploymentID.ValueString()); err != nil {
+	deleteTimeout, timeoutDiagnostics := state.Timeouts.Delete(ctx, defaultCustomModelDeleteTimeout)
+	response.Diagnostics.Append(timeoutDiagnostics...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	deleteCtx, cancel := context.WithTimeout(ctx, deleteTimeout)
+	defer cancel()
+
+	if err := deleteCustomModel(deleteCtx, customResource.client, state.ModelID.ValueString(), state.DeploymentID.ValueString()); err != nil {
 		response.Diagnostics.AddError("Unable to delete Baseten custom model", err.Error())
 		return
 	}
