@@ -227,6 +227,23 @@ func TestCreateCustomModelRejectsInvalidConfigJSON(t *testing.T) {
 	}
 }
 
+func TestValidateCustomModelAutoscalingBounds(t *testing.T) {
+	err := validateCustomModelAutoscalingBounds(types.Int64Value(0), types.Int64Value(1))
+	if err != nil {
+		t.Fatalf("validateCustomModelAutoscalingBounds returned error for valid bounds: %v", err)
+	}
+
+	err = validateCustomModelAutoscalingBounds(types.Int64Value(2), types.Int64Value(1))
+	if err == nil {
+		t.Fatal("validateCustomModelAutoscalingBounds accepted min_replica greater than max_replica")
+	}
+
+	err = validateCustomModelAutoscalingBounds(types.Int64Unknown(), types.Int64Value(1))
+	if err != nil {
+		t.Fatalf("validateCustomModelAutoscalingBounds returned error for unknown min_replica: %v", err)
+	}
+}
+
 func TestUpdateCustomModelAutoscalingUsesStateIDs(t *testing.T) {
 	client := &fakeCustomModelClient{}
 	state := customModelResourceModel{

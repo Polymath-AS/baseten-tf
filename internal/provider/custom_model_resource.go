@@ -11,6 +11,7 @@ import (
 
 	resourcetimeouts "github.com/hashicorp/terraform-plugin-framework-timeouts/resource/timeouts"
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/boolplanmodifier"
@@ -36,6 +37,8 @@ type customModelResource struct {
 }
 
 var _ resource.ResourceWithImportState = &customModelResource{}
+
+var _ resource.ResourceWithValidateConfig = &customModelResource{}
 
 type customModelResourceModel struct {
 	ID                      types.String           `tfsdk:"id"`
@@ -229,6 +232,34 @@ func (customResource *customModelResource) Configure(_ context.Context, request 
 	}
 
 	customResource.client = client
+}
+
+func (customResource *customModelResource) ValidateConfig(ctx context.Context, request resource.ValidateConfigRequest, response *resource.ValidateConfigResponse) {
+	var config customModelResourceModel
+	response.Diagnostics.Append(request.Config.Get(ctx, &config)...)
+	if response.Diagnostics.HasError() {
+		return
+	}
+
+	if err := validateCustomModelAutoscalingBounds(config.MinReplica, config.MaxReplica); err != nil {
+		response.Diagnostics.AddAttributeError(
+			path.Root("max_replica"),
+			"Invalid autoscaling bounds",
+			err.Error(),
+		)
+	}
+}
+
+func validateCustomModelAutoscalingBounds(minReplica types.Int64, maxReplica types.Int64) error {
+	if minReplica.IsNull() || minReplica.IsUnknown() || maxReplica.IsNull() || maxReplica.IsUnknown() {
+		return nil
+	}
+
+	if minReplica.ValueInt64() > maxReplica.ValueInt64() {
+		return fmt.Errorf("min_replica (%d) must be less than or equal to max_replica (%d)", minReplica.ValueInt64(), maxReplica.ValueInt64())
+	}
+
+	return nil
 }
 
 func (customResource *customModelResource) Create(ctx context.Context, request resource.CreateRequest, response *resource.CreateResponse) {
