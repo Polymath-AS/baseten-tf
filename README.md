@@ -12,6 +12,9 @@ golangci-lint run
 
 ## Custom model example
 
+See `examples/custom-model` for a complete fixture that is also exercised by
+the local provider plan test.
+
 ```hcl
 terraform {
   required_providers {

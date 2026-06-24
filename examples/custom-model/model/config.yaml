@@ -1,0 +1,5 @@
+model_name: example-custom-model
+python_version: py311
+requirements: []
+resources:
+  accelerator: A10G
