@@ -6,9 +6,22 @@ Experimental Terraform provider for Baseten custom model deployments.
 
 ```sh
 nix develop
-go test ./...
-golangci-lint run
+scripts/test.sh ci
 ```
+
+Useful test suites:
+
+```sh
+scripts/test.sh unit
+scripts/test.sh lint
+scripts/test.sh build
+scripts/test.sh docs
+TF_ACC=1 BASETEN_API_KEY=... scripts/test.sh acceptance
+```
+
+CI runs `scripts/test.sh ci` on pushes and pull requests. Tags matching `v*`
+run the release workflow, which creates draft GitHub release artifacts with
+GoReleaser.
 
 ## Custom model example
 
