@@ -57,6 +57,15 @@ resource "baseten_custom_model" "example" {
 `min_replica = 0` enables scale-to-zero. Update `source_hash` when local model
 contents change so Terraform replaces the Baseten deployment with a new archive.
 
+Existing deployments can be imported by model and deployment ID:
+
+```sh
+terraform import baseten_custom_model.example model-123:deployment-456
+```
+
+Keep the local model block configured after import; Baseten cannot reconstruct
+local-only inputs such as `source_path`, `source_hash`, and `config_json`.
+
 ## Large model artifacts
 
 Archives are streamed into Baseten's temporary S3 upload location with multipart

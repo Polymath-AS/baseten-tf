@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
@@ -32,6 +33,8 @@ type customModelClient interface {
 type customModelResource struct {
 	client customModelClient
 }
+
+var _ resource.ResourceWithImportState = &customModelResource{}
 
 type customModelResourceModel struct {
 	ID                      types.String `tfsdk:"id"`
@@ -84,6 +87,8 @@ var writeCustomModelArchive archiveWriter = archive.WriteDirectoryTarGzip
 var uploadCustomModelArchive archiveUploader = baseten.UploadModelArchive
 
 const deploymentPollInterval = 30 * time.Second
+
+const customModelImportIDSeparator = ":"
 
 func NewCustomModelResource() resource.Resource {
 	return &customModelResource{}
@@ -338,6 +343,56 @@ func (customResource *customModelResource) Delete(ctx context.Context, request r
 		response.Diagnostics.AddError("Unable to delete Baseten custom model", err.Error())
 		return
 	}
+}
+
+func (customResource *customModelResource) ImportState(ctx context.Context, request resource.ImportStateRequest, response *resource.ImportStateResponse) {
+	output, err := importCustomModel(ctx, customResource.client, request.ID)
+	if err != nil {
+		response.Diagnostics.AddError("Unable to import Baseten custom model", err.Error())
+		return
+	}
+
+	state := customModelResourceModel{
+		ID:                 types.StringValue(output.ModelID + customModelImportIDSeparator + output.DeploymentID),
+		ModelID:            types.StringValue(output.ModelID),
+		DeploymentID:       types.StringValue(output.DeploymentID),
+		DeploymentStatus:   types.StringValue(output.DeploymentStatus),
+		ActiveReplicaCount: types.Int64Value(output.ActiveReplicaCount),
+	}
+
+	response.Diagnostics.Append(response.State.Set(ctx, &state)...)
+}
+
+func importCustomModel(ctx context.Context, client customModelClient, importID string) (customModelOutput, error) {
+	if client == nil {
+		return customModelOutput{}, errors.New("provider client is not configured")
+	}
+
+	modelID, deploymentID, err := parseCustomModelImportID(importID)
+	if err != nil {
+		return customModelOutput{}, err
+	}
+
+	deployment, err := client.GetDeployment(ctx, modelID, deploymentID)
+	if err != nil {
+		return customModelOutput{}, fmt.Errorf("read imported deployment: %w", err)
+	}
+
+	return customModelOutput{
+		ModelID:            modelID,
+		DeploymentID:       deploymentID,
+		DeploymentStatus:   deployment.Status,
+		ActiveReplicaCount: deployment.ActiveReplicaCount,
+	}, nil
+}
+
+func parseCustomModelImportID(importID string) (string, string, error) {
+	modelID, deploymentID, found := strings.Cut(importID, customModelImportIDSeparator)
+	if !found || modelID == "" || deploymentID == "" || strings.Contains(deploymentID, customModelImportIDSeparator) {
+		return "", "", fmt.Errorf("expected import ID in the form model_id%sdeployment_id", customModelImportIDSeparator)
+	}
+
+	return modelID, deploymentID, nil
 }
 
 func deleteCustomModel(ctx context.Context, client customModelClient, modelID string, deploymentID string) error {

@@ -17,6 +17,9 @@ type fakeCustomModelClient struct {
 	autoscalingModelID      string
 	autoscalingDeploymentID string
 	autoscalingMin          *int64
+	getDeploymentModelID    string
+	getDeploymentID         string
+	getDeploymentErr        error
 	deleteDeploymentErr     error
 	deleteModelErr          error
 }
@@ -55,8 +58,14 @@ func (client *fakeCustomModelClient) UpdateDeploymentAutoscalingSettings(_ conte
 	return baseten.UpdateAutoscalingSettingsResponse{Status: "ACCEPTED", Message: "queued"}, nil
 }
 
-func (client *fakeCustomModelClient) GetDeployment(context.Context, string, string) (baseten.Deployment, error) {
-	return baseten.Deployment{ID: "deployment-456", ModelID: "model-123", Status: "ACTIVE", ActiveReplicaCount: 0}, nil
+func (client *fakeCustomModelClient) GetDeployment(_ context.Context, modelID string, deploymentID string) (baseten.Deployment, error) {
+	client.getDeploymentModelID = modelID
+	client.getDeploymentID = deploymentID
+	if client.getDeploymentErr != nil {
+		return baseten.Deployment{}, client.getDeploymentErr
+	}
+
+	return baseten.Deployment{ID: deploymentID, ModelID: modelID, Status: "ACTIVE", ActiveReplicaCount: 0}, nil
 }
 
 func (client *fakeCustomModelClient) DeleteDeployment(context.Context, string, string) (bool, error) {
@@ -269,6 +278,58 @@ func TestDeleteCustomModelReturnsOtherErrors(t *testing.T) {
 	err := deleteCustomModel(context.Background(), client, "model-123", "deployment-456")
 	if err == nil {
 		t.Fatal("deleteCustomModel ignored a non-404 deployment delete error")
+	}
+}
+
+func TestParseCustomModelImportID(t *testing.T) {
+	modelID, deploymentID, err := parseCustomModelImportID("model-123:deployment-456")
+	if err != nil {
+		t.Fatalf("parseCustomModelImportID: %v", err)
+	}
+
+	if modelID != "model-123" || deploymentID != "deployment-456" {
+		t.Fatalf("parsed import ID = %q, %q; want model-123, deployment-456", modelID, deploymentID)
+	}
+}
+
+func TestParseCustomModelImportIDRejectsInvalidShape(t *testing.T) {
+	invalidIDs := []string{"", "model-123", ":deployment-456", "model-123:", "model-123:deployment-456:extra"}
+	for _, invalidID := range invalidIDs {
+		_, _, err := parseCustomModelImportID(invalidID)
+		if err == nil {
+			t.Fatalf("parseCustomModelImportID(%q) returned no error", invalidID)
+		}
+	}
+}
+
+func TestImportCustomModelReadsDeployment(t *testing.T) {
+	client := &fakeCustomModelClient{}
+	output, err := importCustomModel(context.Background(), client, "model-123:deployment-456")
+	if err != nil {
+		t.Fatalf("importCustomModel: %v", err)
+	}
+
+	if client.getDeploymentModelID != "model-123" {
+		t.Fatalf("getDeploymentModelID = %q, want model-123", client.getDeploymentModelID)
+	}
+
+	if client.getDeploymentID != "deployment-456" {
+		t.Fatalf("getDeploymentID = %q, want deployment-456", client.getDeploymentID)
+	}
+
+	if output.ModelID != "model-123" || output.DeploymentID != "deployment-456" || output.DeploymentStatus != "ACTIVE" {
+		t.Fatalf("output = %#v, want imported active model", output)
+	}
+}
+
+func TestImportCustomModelReturnsReadErrors(t *testing.T) {
+	client := &fakeCustomModelClient{
+		getDeploymentErr: baseten.StatusError{StatusCode: 404, Status: "404 Not Found", Body: "missing"},
+	}
+
+	_, err := importCustomModel(context.Background(), client, "model-123:deployment-456")
+	if err == nil {
+		t.Fatal("importCustomModel ignored deployment read error")
 	}
 }
 
