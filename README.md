@@ -14,14 +14,19 @@ Useful test suites:
 ```sh
 scripts/test.sh unit
 scripts/test.sh lint
+scripts/test.sh vuln
 scripts/test.sh build
 scripts/test.sh docs
+scripts/test.sh release-check
 TF_ACC=1 BASETEN_API_KEY=... scripts/test.sh acceptance
 ```
 
 CI runs `scripts/test.sh ci` on pushes and pull requests. Tags matching `v*`
 run the release workflow, which creates draft GitHub release artifacts with
 GoReleaser.
+
+Acceptance tests provision real Baseten resources. Set
+`BASETEN_ACC_ACCELERATOR` to override the default `A10G` test accelerator.
 
 ## Custom model example
 

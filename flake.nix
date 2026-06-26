@@ -37,6 +37,7 @@
               golangci-lint
               gopls
               gotools
+              govulncheck
               goreleaser
               jq
               terraform

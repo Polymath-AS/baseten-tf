@@ -3,15 +3,17 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/test.sh [ci|unit|lint|build|docs|acceptance]
+Usage: scripts/test.sh [ci|unit|lint|vuln|build|docs|release-check|acceptance]
 
 Suites:
-  ci          Run unit tests, lint, build, and docs freshness checks.
-  unit        Run Go tests that do not require real Baseten credentials.
-  lint        Run golangci-lint.
-  build       Build the provider binary.
-  docs        Regenerate provider docs and fail if docs/ changes.
-  acceptance  Run TestAcc tests. Requires TF_ACC=1 and BASETEN_API_KEY.
+  ci             Run unit tests, lint, vulnerability, build, docs, and release checks.
+  unit           Run Go tests that do not require real Baseten credentials.
+  lint           Run golangci-lint.
+  vuln           Run govulncheck.
+  build          Build the provider binary.
+  docs           Regenerate provider docs and fail if docs/ changes.
+  release-check  Validate GoReleaser configuration.
+  acceptance     Run TestAcc tests. Requires TF_ACC=1 and BASETEN_API_KEY.
 USAGE
 }
 
@@ -23,6 +25,10 @@ run_unit() {
 
 run_lint() {
   golangci-lint run
+}
+
+run_vuln() {
+  govulncheck ./...
 }
 
 run_build() {
@@ -48,12 +54,18 @@ run_acceptance() {
   go test ./... -run '^TestAcc' -count=1
 }
 
+run_release_check() {
+  goreleaser check
+}
+
 case "$suite" in
   ci)
     run_unit
     run_lint
+    run_vuln
     run_build
     run_docs
+    run_release_check
     ;;
   unit)
     run_unit
@@ -61,11 +73,17 @@ case "$suite" in
   lint)
     run_lint
     ;;
+  vuln)
+    run_vuln
+    ;;
   build)
     run_build
     ;;
   docs)
     run_docs
+    ;;
+  release-check)
+    run_release_check
     ;;
   acceptance)
     run_acceptance

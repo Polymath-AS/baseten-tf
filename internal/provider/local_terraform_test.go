@@ -13,33 +13,57 @@ import (
 )
 
 func TestCustomModelExamplePlansWithLocalProvider(t *testing.T) {
-	terraformPath, err := exec.LookPath("terraform")
+	tempDir := t.TempDir()
+	repoRoot := repositoryRoot(t)
+	terraformPath := executablePath(t, "terraform")
+	providerDir := buildLocalProvider(t, tempDir, repoRoot)
+
+	exampleSource := filepath.Join(repoRoot, "examples", "custom-model")
+	exampleWorkdir := filepath.Join(tempDir, "custom-model")
+	copyDirectory(t, exampleSource, exampleWorkdir)
+
+	environment := localProviderEnvironment(writeTerraformCLIConfig(t, tempDir, providerDir), "test-key")
+	runCommand(t, exampleWorkdir, environment, terraformPath, "plan", "-input=false", "-no-color")
+}
+
+func executablePath(t *testing.T, name string) string {
+	t.Helper()
+
+	path, err := exec.LookPath(name)
 	if err != nil {
-		t.Skip("terraform binary not found")
+		t.Skipf("%s binary not found", name)
 	}
 
-	goPath, err := exec.LookPath("go")
-	if err != nil {
-		t.Skip("go binary not found")
-	}
+	return path
+}
+
+func repositoryRoot(t *testing.T) string {
+	t.Helper()
 
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatalf("repo root: %v", err)
 	}
 
-	tempDir := t.TempDir()
+	return repoRoot
+}
+
+func buildLocalProvider(t *testing.T, tempDir string, repoRoot string) string {
+	t.Helper()
+
 	providerDir := filepath.Join(tempDir, "provider")
 	if err := os.MkdirAll(providerDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll provider dir: %v", err)
 	}
 
 	providerBinary := filepath.Join(providerDir, "terraform-provider-baseten")
-	runCommand(t, repoRoot, nil, goPath, "build", "-o", providerBinary, ".")
+	runCommand(t, repoRoot, nil, executablePath(t, "go"), "build", "-o", providerBinary, ".")
 
-	exampleSource := filepath.Join(repoRoot, "examples", "custom-model")
-	exampleWorkdir := filepath.Join(tempDir, "custom-model")
-	copyDirectory(t, exampleSource, exampleWorkdir)
+	return providerDir
+}
+
+func writeTerraformCLIConfig(t *testing.T, tempDir string, providerDir string) string {
+	t.Helper()
 
 	terraformConfigPath := filepath.Join(tempDir, "terraformrc")
 	terraformConfig := fmt.Sprintf(`provider_installation {
@@ -53,15 +77,23 @@ func TestCustomModelExamplePlansWithLocalProvider(t *testing.T) {
 		t.Fatalf("WriteFile terraformrc: %v", err)
 	}
 
-	environment := []string{
+	return terraformConfigPath
+}
+
+func localProviderEnvironment(terraformConfigPath string, basetenAPIKey string) []string {
+	return []string{
 		"TF_CLI_CONFIG_FILE=" + terraformConfigPath,
 		"TF_IN_AUTOMATION=1",
-		"BASETEN_API_KEY=test-key",
+		"BASETEN_API_KEY=" + basetenAPIKey,
 	}
-	runCommand(t, exampleWorkdir, environment, terraformPath, "plan", "-input=false", "-no-color")
 }
 
 func runCommand(t *testing.T, workdir string, environment []string, name string, args ...string) {
+	t.Helper()
+	_ = runCommandOutput(t, workdir, environment, name, args...)
+}
+
+func runCommandOutput(t *testing.T, workdir string, environment []string, name string, args ...string) string {
 	t.Helper()
 
 	command := exec.CommandContext(context.Background(), name, args...)
@@ -76,6 +108,8 @@ func runCommand(t *testing.T, workdir string, environment []string, name string,
 	if err := command.Run(); err != nil {
 		t.Fatalf("%s %s failed: %v\nstdout:\n%s\nstderr:\n%s", name, strings.Join(args, " "), err, stdout.String(), stderr.String())
 	}
+
+	return stdout.String()
 }
 
 func copyDirectory(t *testing.T, source string, destination string) {
